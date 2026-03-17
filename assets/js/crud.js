@@ -1,325 +1,290 @@
-// Listas locales para búsquedas rápidas
+/**
+ * ARCHIVO: crud.js
+ * Descripción: Maneja toda la lógica del frontend: comunicación con el servidor (API) 
+ * y actualización de la interfaz de usuario (DOM).
+ */
+
+// --- 1. ESTADO DE LA APLICACIÓN ---
 let listaProductos = [];
 let listaCategorias = [];
 let ultimaCategoriaId = null;
-let modalPadreId = null; // Guardar qué modal nos llamó (Agregar o Editar)
+let modalPadreId = null;
 
-// El dispatcher que usas como switch
-async function ejecutar(accion, datos = null) {
+// --- 2. SERVICIOS API (Fetch) ---
+// Centralizamos las llamadas al servidor aquí.
+const apiService = {
+    async query(action, params = {}) {
+        const isGet = action === 'obtener' || action === 'obtener_cats' || action === 'obtener_stats';
+        const url = `api/api.php${isGet ? '?action=' + action : ''}`;
+
+        const options = {
+            method: isGet ? 'GET' : 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        };
+
+        if (!isGet) {
+            options.body = JSON.stringify({ action, ...params });
+        }
+
+        const response = await fetch(url, options);
+        return await response.json();
+    }
+};
+
+// --- 3. LÓGICA DE NEGOCIO (Controladores) ---
+// Funciones que deciden qué hacer con los datos.
+async function gestionarAccion(accion, datos = null) {
     try {
         switch (accion) {
-            case 'obtener': return await fetch_obtener();
-            case 'crear': return await fetch_crear(datos);
-            case 'actualizar': return await fetch_actualizar(datos);
-            case 'eliminar': return await fetch_eliminar(datos.id);
-            case 'obtener_cats': return await fetch_obtener_cats();
-            case 'crear_cat': return await fetch_crear_cat(datos);
-            case 'actualizar_cat': return await fetch_actualizar_cat(datos);
-            case 'eliminar_cat': return await fetch_eliminar_cat(datos.id);
-            case 'stats': return await fetch_stats();
+            case 'stats':
+                const stats = await apiService.query('obtener_stats');
+                document.getElementById('stat-productos').innerText = stats.total_productos;
+                document.getElementById('stat-categorias').innerText = stats.total_categorias;
+                document.getElementById('stat-stock').innerText = stats.total_stock;
+                break;
+
+            case 'obtener_productos':
+                listaProductos = await apiService.query('obtener');
+                uiManager.dibujarTablaProductos(listaProductos);
+                break;
+
+            case 'crear_producto':
+                const resCrearP = await apiService.query('crear', datos);
+                if (resCrearP.exito) {
+                    uiManager.notificar('¡Guardado!', 'success');
+                    await refrescarTodo();
+                    uiManager.cerrarModal('modal-agregar');
+                }
+                break;
+
+            case 'actualizar_producto':
+                const resEditP = await apiService.query('actualizar', datos);
+                if (resEditP.exito) {
+                    uiManager.notificar('¡Actualizado!', 'success');
+                    await refrescarTodo();
+                    uiManager.cerrarModal('modal-editar');
+                }
+                break;
+
+            case 'eliminar_producto':
+                const confirmP = await uiManager.confirmar('¿Borrar producto?', 'Esta acción no se puede deshacer');
+                if (confirmP.isConfirmed) {
+                    await apiService.query('eliminar', { id: datos.id });
+                    await refrescarTodo();
+                    uiManager.notificar('Eliminado', 'success');
+                }
+                break;
+
+            case 'obtener_categorias':
+                listaCategorias = await apiService.query('obtener_cats');
+                uiManager.dibujarTablaCategorias(listaCategorias);
+                uiManager.llenarSelects(listaCategorias);
+                break;
+
+            case 'crear_categoria':
+                const resCrearC = await apiService.query('crear_cat', datos);
+                if (resCrearC.exito) {
+                    ultimaCategoriaId = datos.id;
+                    uiManager.notificar('Categoría Lista', 'success');
+                    await refrescarTodo();
+                    uiManager.cerrarModal('modal-cat-agregar');
+                }
+                break;
+
+            case 'actualizar_categoria':
+                const resEditC = await apiService.query('actualizar_cat', datos);
+                if (resEditC.exito) {
+                    uiManager.notificar('¡Actualizado!', 'success');
+                    await refrescarTodo();
+                    uiManager.cerrarModal('modal-cat-editar');
+                }
+                break;
+
+            case 'eliminar_categoria':
+                const confirmC = await uiManager.confirmar('¿Borrar categoría?', 'Asegúrate de que no tenga productos');
+                if (confirmC.isConfirmed) {
+                    const resDelC = await apiService.query('eliminar_cat', { id: datos.id });
+                    if (resDelC.exito) {
+                        await refrescarTodo();
+                        uiManager.notificar('Eliminado', 'success');
+                    } else {
+                        uiManager.notificar('Error', 'error', 'Tiene productos vinculados');
+                    }
+                }
+                break;
         }
     } catch (e) {
         console.error("Error en ejecutar:", e);
-        Swal.fire('Error', 'Ocurrió un error inesperado', 'error');
+        uiManager.notificar('Ups!', 'error', 'Ocurrió un error inesperado');
     }
 }
 
-// --- STATS ---
-async function fetch_stats() {
-    let r = await fetch('api/api.php?action=obtener_stats');
-    let d = await r.json();
-    document.getElementById('stat-productos').innerText = d.total_productos;
-    document.getElementById('stat-categorias').innerText = d.total_categorias;
-    document.getElementById('stat-stock').innerText = d.total_stock;
-}
+// --- 4. GESTOR DE INTERFAZ (UI Manager) ---
+// Funciones que tocan el HTML directamente.
+const uiManager = {
+    dibujarTablaProductos(datos) {
+        let tb = document.getElementById('cuerpoTabla');
+        if (!tb) return;
+        tb.innerHTML = datos.map(p => `
+            <tr>
+                <td>${p.id}</td>
+                <td><b>${p.name}</b></td>
+                <td class="text-success fw-bold">$${Number(p.price).toFixed(2)}</td>
+                <td><span class="badge ${p.stock < 5 ? 'bg-danger' : 'bg-success'}">${p.stock}</span></td>
+                <td><span class="badge bg-secondary">${p.cat_nombre || 'General'}</span></td>
+                <td>
+                    <button class="btn btn-warning btn-sm" onclick='prepararEdicionProducto(${JSON.stringify(p)})'><i class="fa-solid fa-edit"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="gestionarAccion('eliminar_producto', {id: ${p.id}})"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            </tr>
+        `).join('') || '<tr><td colspan="6" class="text-center italic">No hay productos</td></tr>';
+    },
 
-// --- PRODUCTOS ---
-async function fetch_obtener() {
-    let r = await fetch('api/api.php?action=obtener');
-    let d = await r.json();
-    listaProductos = Array.isArray(d) ? d : [];
-    return listaProductos;
-}
+    dibujarTablaCategorias(datos) {
+        let tb = document.getElementById('cuerpoTablaCats');
+        if (!tb) return;
+        tb.innerHTML = datos.map(c => `
+            <tr>
+                <td>${c.id}</td>
+                <td>${c.nombre}</td>
+                <td>
+                    <button class="btn btn-warning btn-sm" onclick='prepararEdicionCat(${JSON.stringify(c)})'><i class="fa-solid fa-edit"></i></button>
+                    <button class="btn btn-danger btn-sm" onclick="gestionarAccion('eliminar_categoria', {id: ${c.id}})"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            </tr>
+        `).join('') || '<tr><td colspan="3" class="text-center">No hay categorías</td></tr>';
+    },
 
-async function fetch_crear(pro) {
-    let r = await fetch('api/api.php', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'crear', ...pro })
-    });
-    let res = await r.json();
-    if (res.exito) {
-        Swal.fire({
-            title: '¡Guardado!',
-            text: 'El producto se registró correctamente',
-            icon: 'success',
-            timer: 2000,
-            showConfirmButton: false
+    llenarSelects(cats) {
+        const selects = ['cat_p', 'edit-cat'].map(id => document.getElementById(id)).filter(s => s);
+        selects.forEach(s => {
+            const valorPrevio = s.value;
+            s.innerHTML = '<option value="">(Sin categoría)</option>' +
+                cats.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+
+            if (ultimaCategoriaId) s.value = ultimaCategoriaId;
+            else if (valorPrevio) s.value = valorPrevio;
         });
-        await refrescarTodo();
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-agregar')).hide();
-    } else {
-        Swal.fire('Error', res.error || 'No se pudo guardar', 'error');
-    }
-}
+        ultimaCategoriaId = null;
+    },
 
-async function fetch_actualizar(pro) {
-    let r = await fetch('api/api.php', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'actualizar', ...pro })
-    });
-    let res = await r.json();
-    if (res.exito) {
-        Swal.fire({
-            title: '¡Actualizado!',
-            text: 'Los datos se modificaron con éxito',
-            icon: 'success',
-            timer: 2000,
-            showConfirmButton: false
+    notificar(titulo, icono, texto = '') {
+        Swal.fire({ title: titulo, text: texto, icon: icono, timer: 2000, showConfirmButton: false });
+    },
+
+    async confirmar(titulo, texto) {
+        return await Swal.fire({
+            title: titulo, text: texto, icon: 'warning',
+            showCancelButton: true, confirmButtonColor: '#3085d6', cancelButtonColor: '#d33',
+            confirmButtonText: 'Sí, proceder', cancelButtonText: 'No, cancelar'
         });
-        await refrescarTodo();
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-editar')).hide();
-    } else {
-        Swal.fire('Error', 'No se pudo actualizar', 'error');
+    },
+
+    cerrarModal(id) {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById(id)).hide();
+    },
+
+    abrirModal(id) {
+        bootstrap.Modal.getOrCreateInstance(document.getElementById(id)).show();
     }
-}
+};
 
-async function fetch_eliminar(id) {
-    const result = await Swal.fire({
-        title: '¿Estás seguro?',
-        text: "¡No podrás revertir esto!",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#d33',
-        cancelButtonColor: '#3085d6',
-        confirmButtonText: 'Sí, borrar',
-        cancelButtonText: 'Cancelar'
-    });
-
-    if (result.isConfirmed) {
-        await fetch('api/api.php', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'eliminar', id: id })
-        });
-        await refrescarTodo();
-        Swal.fire('Borrado', 'El producto ha sido eliminado.', 'success');
-    }
-}
-
-// --- CATEGORIAS ---
-async function fetch_obtener_cats() {
-    let r = await fetch('api/api.php?action=obtener_cats');
-    let d = await r.json();
-    listaCategorias = Array.isArray(d) ? d : [];
-    return listaCategorias;
-}
-
-async function fetch_crear_cat(cat) {
-    let r = await fetch('api/api.php', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'crear_cat', ...cat })
-    });
-    let res = await r.json();
-    if (res.exito) {
-        ultimaCategoriaId = cat.id; // Guardamos el ID para seleccionarlo luego
-        Swal.fire({
-            title: 'Categoría Lista',
-            text: 'Ya puedes usarla en tus productos',
-            icon: 'success',
-            timer: 1500,
-            showConfirmButton: false
-        });
-        await refrescarTodo();
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-cat-agregar')).hide();
-    } else {
-        Swal.fire('Ups!', 'Ese ID ya existe o el nombre es inválido', 'error');
-    }
-}
-
-async function fetch_actualizar_cat(cat) {
-    let r = await fetch('api/api.php', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'actualizar_cat', ...cat })
-    });
-    let res = await r.json();
-    if (res.exito) {
-        Swal.fire('Éxito', 'Categoría actualizada correctamente', 'success');
-        await refrescarTodo();
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-cat-editar')).hide();
-    }
-}
-
-async function fetch_eliminar_cat(id) {
-    const result = await Swal.fire({
-        title: '¿Eliminar categoría?',
-        text: "Asegúrate de que no tenga productos vinculados",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Borrar',
-        cancelButtonText: 'Mejor no'
-    });
-
-    if (result.isConfirmed) {
-        let r = await fetch('api/api.php', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'eliminar_cat', id: id })
-        });
-        let res = await r.json();
-        if (!res.exito) {
-            Swal.fire('Error', 'No se pudo borrar. Probablemente tiene productos asignados.', 'error');
-        } else {
-            Swal.fire('Hecho', 'Categoría eliminada', 'success');
-        }
-        await refrescarTodo();
-    }
-}
-
-// --- UI ---
-// Función para no perder el progreso del producto al crear una categoría
-function abrirModalCatRapido(idPadre) {
-    modalPadreId = idPadre;
-    const modalP = bootstrap.Modal.getOrCreateInstance(document.getElementById(idPadre));
-    modalP.hide(); // Ocultamos el de producto momentáneamente
-
-    const modalC = bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-cat-agregar'));
-    modalC.show();
-}
-
+// --- 5. FUNCIONES DE AYUDA (Helpers) ---
 async function refrescarTodo() {
-    try {
-        await ejecutar('stats');
-        let cats = await ejecutar('obtener_cats');
-        llenarSelects(cats || []);
-        dibujarTablaCategorias(cats || []);
-        let prods = await ejecutar('obtener');
-        dibujarTablaProductos(prods || []);
-    } catch (err) {
-        console.error("Error al refrescar:", err);
-    }
+    await gestionarAccion('stats');
+    await gestionarAccion('obtener_categorias');
+    await gestionarAccion('obtener_productos');
 }
 
-function llenarSelects(cats) {
-    const s1 = document.getElementById('cat_p');
-    const s2 = document.getElementById('edit-cat');
-    [s1, s2].forEach(s => {
-        if (!s) return;
-        const valorActual = s.value; // Guardamos lo que el usuario ya habia elegido
-        s.innerHTML = '<option value="">(Sin categoría)</option>';
-        cats.forEach(c => {
-            s.innerHTML += `<option value="${c.id}">${c.nombre}</option>`;
-        });
-
-        // Si acabamos de crear una, la seleccionamos. Si no, dejamos lo que estaba.
-        if (ultimaCategoriaId) {
-            s.value = ultimaCategoriaId;
-        } else if (valorActual) {
-            s.value = valorActual;
-        }
-    });
-    ultimaCategoriaId = null; // Limpiamos para la proxima
-}
-
-function dibujarTablaProductos(datos) {
-    let tb = document.getElementById('cuerpoTabla');
-    if (!tb) return; tb.innerHTML = '';
-    datos.forEach(p => {
-        let tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${p.id}</td>
-            <td><b>${p.name}</b></td>
-            <td class="text-success fw-bold">$${Number(p.price).toFixed(2)}</td>
-            <td><span class="badge ${p.stock < 5 ? 'bg-danger' : 'bg-success'}">${p.stock}</span></td>
-            <td><span class="badge bg-secondary">${p.cat_nombre || 'General'}</span></td>
-            <td>
-                <button class="btn btn-warning btn-sm" onclick='abrirModalEditar(${JSON.stringify(p)})'><i class="fa-solid fa-edit"></i></button>
-                <button class="btn btn-danger btn-sm" onclick="ejecutar('eliminar', {id: ${p.id}})"><i class="fa-solid fa-trash"></i></button>
-            </td>`;
-        tb.appendChild(tr);
-    });
-}
-
-function dibujarTablaCategorias(datos) {
-    let tb = document.getElementById('cuerpoTablaCats');
-    if (!tb) return; tb.innerHTML = '';
-    datos.forEach(c => {
-        let tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${c.id}</td>
-            <td>${c.nombre}</td>
-            <td>
-                <button class="btn btn-warning btn-sm" onclick='abrirModalEditarCat(${JSON.stringify(c)})'><i class="fa-solid fa-edit"></i></button>
-                <button class="btn btn-danger btn-sm" onclick="ejecutar('eliminar_cat', {id: ${c.id}})"><i class="fa-solid fa-trash"></i></button>
-            </td>`;
-        tb.appendChild(tr);
-    });
-}
-
-function abrirModalEditar(p) {
+function prepararEdicionProducto(p) {
     document.getElementById('edit-id').value = p.id;
     document.getElementById('edit-nombre').value = p.name;
     document.getElementById('edit-precio').value = p.price;
     document.getElementById('edit-stock').value = p.stock;
     document.getElementById('edit-cat').value = p.categoria_id || "";
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-editar')).show();
+    uiManager.abrirModal('modal-editar');
 }
 
-function abrirModalEditarCat(c) {
+function prepararEdicionCat(c) {
     document.getElementById('edit-cat-id').value = c.id;
     document.getElementById('edit-cat-nombre').value = c.nombre;
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-cat-editar')).show();
+    uiManager.abrirModal('modal-cat-editar');
+}
+
+function abrirModalCatRapido(idPadre) {
+    modalPadreId = idPadre;
+    uiManager.cerrarModal(idPadre);
+    uiManager.abrirModal('modal-cat-agregar');
 }
 
 function cambiarSeccion(nombre, link) {
-    document.getElementById('seccion-productos').style.display = nombre === 'productos' ? 'block' : 'none';
-    document.getElementById('seccion-categorias').style.display = nombre === 'categorias' ? 'block' : 'none';
+    ['productos', 'categorias'].forEach(sec => {
+        document.getElementById(`seccion-${sec}`).style.display = sec === nombre ? 'block' : 'none';
+    });
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
     link.classList.add('active');
 }
 
+// --- 6. EVENTOS PRINCIPALES ---
 document.addEventListener('DOMContentLoaded', () => {
     refrescarTodo();
 
-    document.getElementById('form-agregar')?.addEventListener('submit', async (e) => {
+    // Formularios de Productos
+    document.getElementById('form-agregar')?.addEventListener('submit', (e) => {
         e.preventDefault();
-        await ejecutar('crear', {
-            id: document.getElementById('id_prod').value, name: document.getElementById('nombre').value,
-            price: document.getElementById('precio').value, stock: document.getElementById('stock').value,
+        gestionarAccion('crear_producto', {
+            id: document.getElementById('id_prod').value,
+            name: document.getElementById('nombre').value,
+            price: document.getElementById('precio').value,
+            stock: document.getElementById('stock').value,
             categoria_id: document.getElementById('cat_p').value
         });
         e.target.reset();
     });
 
-    document.getElementById('form-editar')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-editar')?.addEventListener('submit', (e) => {
         e.preventDefault();
-        await ejecutar('actualizar', {
-            id: document.getElementById('edit-id').value, name: document.getElementById('edit-nombre').value,
-            price: document.getElementById('edit-precio').value, stock: document.getElementById('edit-stock').value,
+        gestionarAccion('actualizar_producto', {
+            id: document.getElementById('edit-id').value,
+            name: document.getElementById('edit-nombre').value,
+            price: document.getElementById('edit-precio').value,
+            stock: document.getElementById('edit-stock').value,
             categoria_id: document.getElementById('edit-cat').value
         });
     });
 
-    document.getElementById('form-cat-agregar')?.addEventListener('submit', async (e) => {
+    // Formularios de Categorías
+    document.getElementById('form-cat-agregar')?.addEventListener('submit', (e) => {
         e.preventDefault();
-        await ejecutar('crear_cat', { id: document.getElementById('id_cat').value, nombre: document.getElementById('nombre_cat').value });
+        gestionarAccion('crear_categoria', {
+            id: document.getElementById('id_cat').value,
+            nombre: document.getElementById('nombre_cat').value
+        });
         e.target.reset();
     });
 
-    document.getElementById('form-cat-editar')?.addEventListener('submit', async (e) => {
+    document.getElementById('form-cat-editar')?.addEventListener('submit', (e) => {
         e.preventDefault();
-        await ejecutar('actualizar_cat', { id: document.getElementById('edit-cat-id').value, nombre: document.getElementById('edit-cat-nombre').value });
+        gestionarAccion('actualizar_categoria', {
+            id: document.getElementById('edit-cat-id').value,
+            nombre: document.getElementById('edit-cat-nombre').value
+        });
     });
 
+    // Buscador
     document.getElementById('inputBuscar')?.addEventListener('keyup', (e) => {
-        let b = e.target.value.toLowerCase();
-        dibujarTablaProductos(listaProductos.filter(p => p.name.toLowerCase().includes(b) || p.id.toString().includes(b)));
+        const busqueda = e.target.value.toLowerCase();
+        const filtrados = listaProductos.filter(p =>
+            p.name.toLowerCase().includes(busqueda) || p.id.toString().includes(busqueda)
+        );
+        uiManager.dibujarTablaProductos(filtrados);
     });
 
-    // Listener para cuando se cierra el modal de categorias:
-    // Si venimos desde un producto (Agregar/Editar), que regrese a ese formulario
+    // Restaurar modal de producto si se cerró por crear categoría
     document.getElementById('modal-cat-agregar')?.addEventListener('hidden.bs.modal', () => {
         if (modalPadreId) {
-            const modalPadre = bootstrap.Modal.getOrCreateInstance(document.getElementById(modalPadreId));
-            modalPadre.show();
-            modalPadreId = null; // Reset
+            uiManager.abrirModal(modalPadreId);
+            modalPadreId = null;
         }
     });
 });
