@@ -3,7 +3,7 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-require_once '../config/connectdb.php';
+require_once __DIR__ . '/../config/connectdb.php';
 
 $input = json_decode(file_get_contents('php://input'), true);
 $accion = $input['action'] ?? $_GET['action'] ?? '';
