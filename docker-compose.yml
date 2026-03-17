@@ -1,16 +1,14 @@
 version: '3.8'
 
 services:
-  # Servicio de la aplicación PHP
   app:
     build: .
     container_name: tienda_app
     ports:
-      - "8085:80" # Podrás entrar en http://localhost:8085
+      - "8085:80"
     volumes:
-      - .:/var/www/html # Sincroniza archivos locales con el contenedor (caliente)
+      - .:/var/www/html
     environment:
-      # Pasamos las credenciales de la DB al entorno
       DB_HOST: db
       DB_NAME: tienda_db
       DB_USER: jhonatan
@@ -18,7 +16,6 @@ services:
     depends_on:
       - db
 
-  # Servicio de la Base de Datos MySQL
   db:
     image: mysql:8.0
     container_name: tienda_db_container
@@ -30,7 +27,7 @@ services:
       MYSQL_USER: jhonatan
       MYSQL_PASSWORD: 'XkgKPVpcwy2[b(/I'
     ports:
-      - "3307:3306" # MySQL estará en el 3307 para no chocar con tu XAMPP local
+      - "3307:3306"
     volumes:
       - db_data:/var/lib/mysql
 
