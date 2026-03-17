@@ -14,6 +14,9 @@
     <!-- AdminLTE 4 CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@4.0.0-rc3/dist/css/adminlte.min.css"
         crossorigin="anonymous">
+    <!-- SweetAlert2 para alertas modernas -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <style>
         .required-label::after {
@@ -239,8 +242,16 @@
                                     id="precio" class="form-control" step="0.01" required></div>
                             <div class="col-md-4"><label class="required-label">Stock inicial</label><input
                                     type="number" id="stock" class="form-control" required></div>
-                            <div class="col-md-4"><label>Categoría</label><select id="cat_p"
-                                    class="form-select"></select></div>
+                            <div class="col-md-4">
+                                <label>Categoría</label>
+                                <div class="input-group">
+                                    <select id="cat_p" class="form-select"></select>
+                                    <button type="button" class="btn btn-outline-success"
+                                        onclick="abrirModalCatRapido('modal-agregar')">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer bg-light"><button type="submit" class="btn btn-primary px-4">Guardar
@@ -268,8 +279,16 @@
                                     id="edit-precio" class="form-control" step="0.01" required></div>
                             <div class="col-md-4"><label class="required-label">Stock</label><input type="number"
                                     id="edit-stock" class="form-control" required></div>
-                            <div class="col-md-4"><label>Categoría</label><select id="edit-cat"
-                                    class="form-select"></select></div>
+                            <div class="col-md-4">
+                                <label>Categoría</label>
+                                <div class="input-group">
+                                    <select id="edit-cat" class="form-select"></select>
+                                    <button type="button" class="btn btn-outline-warning"
+                                        onclick="abrirModalCatRapido('modal-editar')">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer bg-light"><button type="submit" class="btn btn-success px-4">Actualizar
