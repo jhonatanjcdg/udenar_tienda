@@ -6,7 +6,7 @@ services:
     build: .
     container_name: tienda_app
     ports:
-      - "8080:80" # Podrás entrar en http://localhost:8080
+      - "8085:80" # Podrás entrar en http://localhost:8085
     volumes:
       - .:/var/www/html # Sincroniza archivos locales con el contenedor (caliente)
     environment:

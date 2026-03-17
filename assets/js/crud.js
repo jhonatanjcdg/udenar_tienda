@@ -125,6 +125,14 @@ const uiManager = {
     dibujarTablaProductos(datos) {
         let tb = document.getElementById('cuerpoTabla');
         if (!tb) return;
+        
+        // Evitamos errores si datos no es un array (por errores de API)
+        if (!Array.isArray(datos)) {
+            console.error("dibujarTablaProductos: 'datos' no es un array", datos);
+            tb.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error al cargar datos del almacén</td></tr>';
+            return;
+        }
+
         tb.innerHTML = datos.map(p => `
             <tr>
                 <td>${p.id}</td>
@@ -143,6 +151,13 @@ const uiManager = {
     dibujarTablaCategorias(datos) {
         let tb = document.getElementById('cuerpoTablaCats');
         if (!tb) return;
+
+        if (!Array.isArray(datos)) {
+            console.error("dibujarTablaCategorias: 'datos' no es un array", datos);
+            tb.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Error al cargar categorías</td></tr>';
+            return;
+        }
+
         tb.innerHTML = datos.map(c => `
             <tr>
                 <td>${c.id}</td>
